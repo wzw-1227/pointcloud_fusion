@@ -1,0 +1,75 @@
+<launch>
+  <!-- Explicit ideal-pose diagnostic. Never use this entry for LIO acceptance. -->
+  <arg name="gui" default="true"/>
+  <arg name="rviz" default="true"/>
+  <arg name="rviz_config" default="$(find start_up)/rviz/stage3_gazebo_algorithm.rviz"/>
+  <arg name="record" default="true"/>
+  <arg name="ground_truth_source" default="stamped"/>
+  <arg name="manual_control" default="true"/>
+  <arg name="uav_sensor_profile" default="stable"/>
+  <arg name="world" default="$(find start_up)/worlds/stage1_stable.world"/>
+  <arg name="min_range" default="0.5"/>
+  <arg name="max_range" default="30.0"/>
+  <arg name="ugv_x" default="-3.0"/>
+  <arg name="ugv_y" default="-3.0"/>
+  <arg name="uav_x" default="-2.2"/>
+  <arg name="uav_y" default="-3.0"/>
+  <arg name="uav_z" default="0.3"/>
+  <arg name="output_root" default="$(find start_up)/../../results/stage3_gazebo_algorithm"/>
+  <!-- Enhanced is available for comparison; promote only after recorded-scene acceptance. -->
+  <arg name="matching_profile" default="legacy"/>
+  <arg name="warm_start_inputs" default=""/>
+  <arg name="config" default="$(find start_up)/config/stage3_gazebo_algorithm_matching_$(arg matching_profile).yaml"/>
+  <param name="/algorithm_test/enabled" value="true"/>
+  <param name="/algorithm_test/pose_source" value="gazebo_truth_frontend_only"/>
+  <include file="$(find start_up)/launch/stage1_sim.launch">
+    <arg name="robot" value="both"/>
+    <arg name="sim_profile" value="stable"/>
+    <arg name="uav_sensor_profile" value="$(arg uav_sensor_profile)"/>
+    <arg name="enable_lio" value="false"/>
+    <arg name="ground_truth_source" value="$(arg ground_truth_source)"/>
+    <arg name="world" value="$(arg world)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="rviz" value="false"/>
+    <arg name="manual_control" value="$(arg manual_control)"/>
+    <arg name="ugv_x" value="$(arg ugv_x)"/>
+    <arg name="ugv_y" value="$(arg ugv_y)"/>
+    <arg name="uav_x" value="$(arg uav_x)"/>
+    <arg name="uav_y" value="$(arg uav_y)"/>
+    <arg name="uav_z" value="$(arg uav_z)"/>
+  </include>
+  <!-- Existing bridge's input contract, isolated from real /lio_sam parameters. -->
+  <rosparam ns="/algorithm_test/ugv/lio_sam">
+    loopClosureEnableFlag: false
+    odometryFrame: algorithm_ugv_odom
+    odomChildFrame: algorithm_ugv_lidar
+    source: ideal_pose_gazebo_diagnostic_not_lio
+  </rosparam>
+  <rosparam ns="/algorithm_test/uav/lio_sam">
+    loopClosureEnableFlag: false
+    odometryFrame: algorithm_uav_odom
+    odomChildFrame: algorithm_uav_lidar
+    source: ideal_pose_gazebo_diagnostic_not_lio
+  </rosparam>
+  <node pkg="start_up" type="stage3_gazebo_frontend.py" name="algorithm_test_frontend" required="true" output="screen">
+    <param name="output_root" value="$(arg output_root)/frontend"/>
+    <param name="record" value="$(arg record)"/>
+    <param name="min_range" value="$(arg min_range)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+  </node>
+  <include file="$(find ehpr_bridge)/launch/stage2_submaps.launch">
+    <arg name="robot" value="both"/>
+    <arg name="config" value="$(find start_up)/config/stage3_gazebo_algorithm_submaps.yaml"/>
+    <arg name="output_root" value="$(arg output_root)/submaps"/>
+  </include>
+  <include file="$(find ehpr_bridge)/launch/stage3_matching.launch">
+    <arg name="mode" value="ideal_frontend"/>
+    <!-- No LIO is running here. This exemption is restricted to this test entry. -->
+    <arg name="require_lio_quality" value="false"/>
+    <arg name="config" value="$(arg config)"/>
+    <arg name="output_root" value="$(arg output_root)/matches"/>
+    <arg name="warm_start_inputs" value="$(arg warm_start_inputs)"/>
+  </include>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="algorithm_test_rviz"
+        args="-d $(arg rviz_config)"/>
+</launch>

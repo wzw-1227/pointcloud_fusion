@@ -1,0 +1,34 @@
+<launch>
+  <arg name="robot" default="both"/>
+  <arg name="ugv_config" default="$(find start_up)/config/stage1_ugv_real.template.yaml"/>
+  <arg name="uav_config" default="$(find start_up)/config/stage1_uav_real.template.yaml"/>
+  <arg name="contract" default="$(find start_up)/config/stage1_real_contract.template.yaml"/>
+  <param name="/use_sim_time" value="false"/>
+  <param name="/stage1/environment" value="real"/>
+  <param name="/stage1/robot" value="$(eval {'ugv':'ugv','uav':'uav','both':'both'}[arg('robot')])"/>
+  <param name="/stage1/contract_file" value="$(arg contract)"/>
+  <group if="$(eval arg('robot') in ['ugv','both'])">
+    <node pkg="start_up" type="stage1_sensor_tf.py" name="stage1_ugv_sensor_tf" required="true">
+      <param name="robot" value="ugv"/>
+      <param name="hardware_config" value="$(arg ugv_config)"/>
+    </node>
+    <include file="$(find start_up)/launch/stage1_lio.launch">
+      <arg name="config_file" value="$(arg ugv_config)"/>
+      <arg name="robot" value="ugv"/>
+      <arg name="real" value="true"/>
+    </include>
+  </group>
+  <group if="$(eval arg('robot') in ['uav','both'])">
+    <node pkg="start_up" type="stage1_sensor_tf.py" name="stage1_uav_sensor_tf" required="true">
+      <param name="robot" value="uav"/>
+      <param name="hardware_config" value="$(arg uav_config)"/>
+    </node>
+    <include file="$(find start_up)/launch/stage1_lio.launch">
+      <arg name="namespace" value="uav"/>
+      <arg name="config_file" value="$(arg uav_config)"/>
+      <arg name="robot" value="uav"/>
+      <arg name="real" value="true"/>
+    </include>
+  </group>
+  <node pkg="start_up" type="stage1_monitor.py" name="stage1_monitor" required="true"/>
+</launch>

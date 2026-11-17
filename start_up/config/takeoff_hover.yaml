@@ -1,0 +1,16 @@
+# Parameters for offboard_mapping_mission.py; waypoints are [x, y, z, yaw]
+# offsets in PX4's local ENU frame. The launch overrides the single z offset.
+publish_rate: 20.0
+position_tolerance: 0.35
+waypoint_hold_time: 1.5
+waypoint_timeout: 60.0
+connection_timeout: 120.0
+startup_delay: 2.0
+prestream_time: 3.0
+loops: 1
+land_on_finish: false
+
+pointcloud_topic: "/velodyne_points"
+imu_topic: "/iris_0/imu_gazebo"
+lio_odometry_topic: "/uav/lio_sam/mapping/odometry"
+wait_for_lio: true

@@ -1,0 +1,86 @@
+Panels:
+- Class: rviz/Displays
+  Name: Displays
+  Property Tree Widget:
+    Expanded: []
+    Splitter Ratio: 0.5
+  Tree Height: 500
+- Class: rviz/Selection
+  Name: Selection
+- Class: rviz/Views
+  Name: Views
+  Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ''
+  Displays:
+  - Class: rviz/Grid
+    Name: Grid
+    Enabled: true
+    Value: true
+    Plane: XY
+    Cell Size: 1
+    Plane Cell Count: 40
+    Reference Frame: odom
+  - Class: rviz/PointCloud2
+    Name: UGV matched submap
+    Topic: /stage3/match_cloud_ugv
+    Enabled: false
+    Value: false
+    Queue Size: 2
+    Style: Points
+    Size (Pixels): 3
+    Color Transformer: FlatColor
+    Color: 40; 220; 70
+    Decay Time: 0
+    Alpha: 0.7
+  - Class: rviz/PointCloud2
+    Name: UAV aligned submap
+    Topic: /stage3/match_cloud_uav
+    Enabled: false
+    Value: false
+    Queue Size: 2
+    Style: Points
+    Size (Pixels): 3
+    Color Transformer: FlatColor
+    Color: 230; 70; 220
+    Decay Time: 0
+    Alpha: 0.7
+  - Class: rviz/PointCloud2
+    Name: Fused matched submaps
+    Topic: /fused_submap
+    Enabled: true
+    Value: true
+    Queue Size: 2
+    Style: Points
+    Size (Pixels): 3
+    Color Transformer: RGB8
+    Decay Time: 0
+    Alpha: 1
+  Enabled: true
+  Global Options:
+    Fixed Frame: odom
+    Background Color: 35; 38; 42
+    Frame Rate: 30
+  Name: root
+  Tools:
+  - Class: rviz/Interact
+  - Class: rviz/MoveCamera
+  - Class: rviz/Select
+  - Class: rviz/FocusCamera
+  - Class: rviz/Measure
+  - Class: rviz/SetInitialPose
+  - Class: rviz/SetGoal
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 30
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Name: Current View
+      Pitch: 0.7
+      Yaw: 0.7
+Window Geometry:
+  Height: 900
+  Width: 1500

@@ -1,0 +1,34 @@
+# Algorithm-only Gazebo truth frontend; not LIO acceptance.
+upstream_commit: b4b7137f7e675974e025fc3c8e0ab891d353739a
+voxel_map:
+  voxel_size: 1.0
+  max_distance: 20.0
+  max_points_per_voxel: 25
+  remove_distance: 80.0
+sync_queue_size: 100
+max_gap_seconds: 1.0
+max_translation_jump_m: 1.0
+max_rotation_jump_deg: 45.0
+robots:
+  ugv:
+    robot_id: 0
+    lio_namespace: /algorithm_test/ugv
+    cloud_topic: /algorithm_test/ugv/cloud_registered
+    odometry_topic: /algorithm_test/ugv/odometry
+    reference_frame: algorithm_ugv_odom
+    mapping_child: algorithm_ugv_lidar
+    preview_interval_seconds: 10.0
+    preview_warmup_seconds: 15.0
+    preview_min_frames: 20
+    preview_initial_displacement_m: 0.0
+  uav:
+    robot_id: 1
+    lio_namespace: /algorithm_test/uav
+    cloud_topic: /algorithm_test/uav/cloud_registered
+    odometry_topic: /algorithm_test/uav/odometry
+    reference_frame: algorithm_uav_odom
+    mapping_child: algorithm_uav_lidar
+    preview_interval_seconds: 3.0
+    preview_warmup_seconds: 15.0
+    preview_min_frames: 20
+    preview_initial_displacement_m: 0.0

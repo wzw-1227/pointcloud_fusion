@@ -1,0 +1,48 @@
+# Diagnostic candidate: 1 m correspondence distance passed the independent 7-case audit.
+# All quality gates remain unchanged. Production stage3.yaml stays at 5 m.
+upstream_commit: b4b7137f7e675974e025fc3c8e0ab891d353739a
+bev_resolution: 0.5
+image_size: 210
+height_resolution: 1.0
+max_density: 135.0
+local_density: 3
+buckets: 16
+hamming_distance: 60
+distribution_mean: 115.0
+distribution_std: 20.0
+database_capacity: 200
+allow_partial: true
+min_inliers: 7
+min_points: 20
+voxel_size: 0.5
+# Restrict retrieval/registration; complete input clouds remain available for fusion.
+matching_radius_ugv: 8.0
+matching_radius_ugv_fallback: 12.0
+# Recent synchronized scans drive matching; full submaps remain the fusion input.
+use_recent_matching_cloud: true
+recent_window_seconds: 5.0
+recent_voxel_size: 0.2
+recent_min_frames: 20
+recent_max_frames: 100
+ugv_registered_cloud_topic: /algorithm_test/ugv/cloud_registered
+uav_registered_cloud_topic: /algorithm_test/uav/cloud_registered
+ugv_registered_odometry_topic: /algorithm_test/ugv/odometry
+uav_registered_odometry_topic: /algorithm_test/uav/odometry
+matching_radius_uav: 0.0
+max_candidates: 10
+# Reject repeated ground/wall-corner aliases. Baseline is each cloud's Z 10th percentile.
+min_structural_overlap: 0.6
+structural_height_above_floor: 0.4
+min_structural_points: 20
+max_iterations: 10
+correspondence_distance: 1.0
+max_fitness: 2.5
+overlap_radius: 0.5
+min_overlap: 0.3
+max_residual_rmse: 0.3
+ugv_frame: algorithm_ugv_odom
+uav_frame: algorithm_uav_odom
+ugv_topic: /stage2/ugv/submap
+uav_topic: /stage2/uav/submap
+worker_queue_size: 64
+fusion_voxel_size: 0.15
