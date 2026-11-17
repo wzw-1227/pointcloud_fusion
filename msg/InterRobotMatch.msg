@@ -1,0 +1,21 @@
+# Transform convention: T_query_reference maps UGV keyframe points into UAV keyframe.
+std_msgs/Header header
+string reference_frame
+time reference_stamp
+string query_session_id
+string reference_session_id
+uint32 query_epoch
+uint32 reference_epoch
+uint32 query_submap_id
+uint32 reference_submap_id
+geometry_msgs/Transform coarse_transform
+geometry_msgs/Transform refined_transform
+uint32 ransac_inliers
+float64 fitness
+float64 overlap_reference
+float64 overlap_query
+float64 overlap_smaller_cloud
+float64 residual_rmse
+bool query_partial
+bool reference_partial
+string result_path

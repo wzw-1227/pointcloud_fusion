@@ -1,0 +1,20 @@
+<launch>
+  <arg name="require_lio_quality" default="true"/>
+  <arg name="config" default="$(find ehpr_bridge)/config/stage3.yaml"/>
+  <arg name="output_root" default="$(find start_up)/../../results/stage3"/>
+  <arg name="mode" default="live"/>
+  <arg name="input_directory" default=""/>
+  <arg name="keep_alive" default="false"/>
+  <arg name="parent_launch_pid" default="0"/>
+  <arg name="warm_start_inputs" default=""/>
+  <node pkg="ehpr_bridge" type="stage3_matching_node" name="stage3_matcher" output="screen">
+    <param name="require_lio_quality" value="$(arg require_lio_quality)"/>
+    <param name="config" value="$(arg config)"/>
+    <param name="output_root" value="$(arg output_root)"/>
+    <param name="mode" value="$(arg mode)"/>
+    <param name="input_directory" value="$(arg input_directory)"/>
+    <param name="keep_alive" value="$(arg keep_alive)"/>
+    <param name="parent_launch_pid" value="$(arg parent_launch_pid)"/>
+    <param name="warm_start_inputs" value="$(arg warm_start_inputs)"/>
+  </node>
+</launch>

@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# 上游源码（许可证说明见 UPSTREAM.md 与 third_party/EHPR_SOURCE.json）
+third_party/EHPR/
+
+# 测试数据（点云/匹配结果等数据文件，不含测试脚本）
+tests/data/
+
+# 构建产物
+build/
+devel/
+install/
+log/

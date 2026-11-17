@@ -1,0 +1,17 @@
+<launch>
+  <arg name="input_directory"/>
+  <arg name="rviz" default="true"/>
+  <arg name="config" default="$(find ehpr_bridge)/config/stage3.yaml"/>
+  <arg name="reference_frame" default="odom"/>
+  <arg name="output_root" default="$(find start_up)/../../results/stage3"/>
+  <param name="use_sim_time" value="false"/>
+  <include file="$(find ehpr_bridge)/launch/stage3_matching.launch">
+    <arg name="mode" value="replay"/>
+    <arg name="input_directory" value="$(arg input_directory)"/>
+    <arg name="config" value="$(arg config)"/>
+    <arg name="output_root" value="$(arg output_root)"/>
+    <arg name="keep_alive" value="true"/>
+  </include>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="stage3_replay_frame" args="0 0 0 0 0 0 stage3_replay_world $(arg reference_frame)"/>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="stage3_replay_rviz" args="-d $(find start_up)/rviz/stage3_matches.rviz"/>
+</launch>

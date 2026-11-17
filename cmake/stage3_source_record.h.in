@@ -1,0 +1,4 @@
+#pragma once
+namespace ehpr_bridge {
+constexpr const char* stage3_source_record = R"ehpr_record(@STAGE3_SOURCE_RECORD_JSON@)ehpr_record";
+}

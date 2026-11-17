@@ -1,0 +1,461 @@
+--- a/include/ehpr/desc_mng.h
++++ b/include/ehpr/desc_mng.h
+@@ -56,6 +56,7 @@
+ } 
+ 
+ struct DescriptorManagerConfig {
++  bool planar_bev_ = false;
+   float reso_row_ = 1.0f, reso_col_ = 1.0f;
+   int n_row_ = 120, n_col_ = 120;
+   double max_dens_ = 255;
+@@ -234,7 +235,7 @@
+         if(tmp_bin.size() != height_bin_num_){
+           tmp_bin.resize(height_bin_num_);
+         }
+-        int idx = floor((height - height_bin_base)/cfg_.height_res_);
++        int idx = std::min(height_bin_num_-1, std::max(0, int(floor((height - height_bin_base)/cfg_.height_res_))));
+         tmp_bin.set(idx, true); 
+       }
+     }
+@@ -248,7 +249,7 @@
+           if(tmp_bin.size() !=height_bin_num_){
+             tmp_bin.resize(height_bin_num_);
+           }
+-          int idx = floor((height - height_bin_base)/cfg_.height_res_);
++          int idx = std::min(height_bin_num_-1, std::max(0, int(floor((height - height_bin_base)/cfg_.height_res_))));
+           // std::cout << "set bin  " << idx << std::endl;
+           tmp_bin.set(idx, true);
+         }
+@@ -286,6 +287,21 @@
+ 
+   void makeFeature();
+ 
++  // Planar retrieval deliberately has no height code. Empty height bins are
++  // handled by the candidate API; height validity is not a planar prerequisite.
++  void makePlanarBEV(const pcl::PointCloud<pcl::PointXYZ>& points) {
++    bev_ = cv::Mat::zeros(cfg_.n_row_, cfg_.n_col_, CV_32F);
++    height_bin_num_ = 0; h_min_ = h_max_ = 0;
++    for(const auto& p:points){const auto rc=hashPointToImage(p);
++      if(rc.first>=0)bev_.at<float>(rc.first,rc.second)=255;
++    }
++  }
++
++  // Retain ORB, keypoints and key-height codes; release only construction buffers.
++  void releaseConstructionBuffers(){
++    bev_.release();decltype(height_bin_mat_)().swap(height_bin_mat_);
++    decltype(bev_pixfs_)().swap(bev_pixfs_);
++  }
+   void clearImage(){
+     bev_.release();
+     bev_descriptors_.release();
+@@ -353,4 +369,4 @@
+ };
+ 
+ 
+-#endif //EHPR_DESC_MNG_H
+\ 文件尾没有换行符
++#endif //EHPR_DESC_MNG_H
+--- a/include/ehpr/desc_db.h
++++ b/include/ehpr/desc_db.h
+@@ -36,6 +36,8 @@
+   double distri_mean_ =115.0;
+   double distri_var_ = 22.0;
+   int skip_num_ = 10;
++  bool enhanced_ = false;
++  double planar_inlier_distance_ = .75;
+ };
+ 
+ inline int find_last(const boost::dynamic_bitset<>& bitset) {  
+@@ -72,6 +74,16 @@
+   std::vector<int> inlier_vec;
+ };
+ 
++// A ranked geometric candidate; height validity belongs to this candidate only.
++struct CoarseCandidate {
++  int reference_id = -1;
++  size_t inliers = 0, height_pairs = 0, empty_height_pairs = 0;
++  Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
++  bool height_valid = false;
++  double planar_rmse = 0;
++  size_t raw_correspondences = 0;
++};
++
+ class DescriptorDB {
+   
+   const DescriptorDBConfig cfg_;
+@@ -92,7 +104,21 @@
+   std::vector<Eigen::Quaterniond> qr_imu_vec;
+   //for test
+ public:
+-  double align_time;
++  int last_match_count_ = 0;
++  double align_time = 0;
++  std::vector<CoarseCandidate> queryEnhanced(const std::shared_ptr<const DescriptorManager>& query,size_t limit);
++  size_t last_height_pairs = 0;
++  size_t last_empty_height_pairs = 0;
++  bool query_matchables_owned_ = false;
++  ~DescriptorDB() { releaseQueryMatchables(); }
++  void releaseQueryMatchables() {
++    descriptor_matches_.clear();
++    for (auto& group : class_matchables_query_) {
++      if (query_matchables_owned_) for (auto* matchable : group) delete matchable;
++      group.clear();
++    }
++    query_matchables_owned_ = false;
++  }
+ 
+   DescriptorDB(const DescriptorDBConfig &config) : cfg_(config) {
+     initializeBuckets();
+@@ -146,9 +172,12 @@
+ 
+   double calcauInlierRatio(int qr_id);
+ 
++  std::vector<CoarseCandidate> queryFeatureCandidates(
++      const std::shared_ptr<const DescriptorManager>& query, size_t max_candidates);
++
+   int queryFeatureHamming(const std::shared_ptr<const DescriptorManager> &q_ptr,
+                     std::vector<int> &cand_indx, std::vector<double> &cand_corr,
+-                    Eigen::Matrix4d &pose);
++                    Eigen::Matrix4d &pose, bool* height_valid = nullptr);
+ 
+   
+   void initializeBuckets() {
+@@ -280,6 +309,8 @@
+ 
+   // For ease of retrieval, we first categorize by fine granularity
+   void getClassMatchables(const std::shared_ptr<const DescriptorManager> &q_ptr) {
++    releaseQueryMatchables();
++    query_matchables_owned_ = true;
+     TicToc clk;
+     clk.tic();
+     if(class_matchables_query_.size() == 0){
+@@ -319,6 +350,8 @@
+       }
+     }
+     all_bevs_.emplace_back(q_ptr);
++    query_matchables_owned_ = false;
++    for (auto& group : class_matchables_query_) group.clear();
+     std::cout<<"Time addToHBST "<<clk.toc()<<std::endl;
+   }
+ 
+--- a/include/ehpr/AlignRansac2D.h
++++ b/include/ehpr/AlignRansac2D.h
+@@ -28,6 +28,7 @@
+ #include <utility>
+ #include <vector>
+ #include <numeric>
++#include <cstdint>
+ namespace map_closures {
+ struct PointPair {
+     PointPair() = default;
+@@ -41,4 +42,11 @@
+     double dist = 1000;
+ };
+ std::pair<Eigen::Isometry2d, std::vector<int>> RansacAlignment2D(const std::vector<PointPair> &keypoint_pairs);
++struct RansacHypothesis {
++    Eigen::Isometry2d pose = Eigen::Isometry2d::Identity();
++    std::vector<int> inliers;
++    double rmse = 0;
++};
++std::vector<RansacHypothesis> RansacHypotheses2D(const std::vector<PointPair>& pairs,
++    uint32_t seed, int trials=1000, double threshold=.75, double minimum_baseline=1.);
+ }  // namespace map_closures
+--- a/src/ehpr/desc_mng.cpp
++++ b/src/ehpr/desc_mng.cpp
+@@ -18,6 +18,8 @@
+ 	cv::Ptr<cv::DescriptorExtractor> extractor;
+ 	extractor = cv::ORB::create(ORB_PARAM::nfeatures, ORB_PARAM::scale_factor, ORB_PARAM::n_levels, ORB_PARAM::edge_threshold,
+ 														ORB_PARAM::first_level, ORB_PARAM::WTA_K, cv::ORB::ScoreType(ORB_PARAM::score_type), ORB_PARAM::patch_size, ORB_PARAM::fast_threshold);
++	if(cfg_.planar_bev_)
++		extractor = cv::ORB::create(500, 1.2f, 4, 15, 0, 2, cv::ORB::HARRIS_SCORE, 15, 10);
+ 	// std::cout <<"time construct extractor"<< cons_clk.toc()<< std::endl;
+ 	extractor->detectAndCompute(input_mat, cv::noArray(), keypoints,  descriptors);
+ 	bev_descriptors_  = descriptors;
+@@ -103,4 +105,4 @@
+ 	std::cout<<"Time makeFeature "<<clk.toc()<<std::endl;
+ 	std::cout << "key size " << keypoints_.size() <<" "<<key_height_bin_.size()<<std::endl;
+ 	DCHECK_EQ(key_height_bin_.size(), keypoints_.size());
+-}
+\ 文件尾没有换行符
++}
+--- a/src/ehpr/desc_db.cpp
++++ b/src/ehpr/desc_db.cpp
+@@ -1,4 +1,6 @@
+ #include "ehpr/desc_db.h"
++#include <set>
++#include <tuple>
+ #include <glog/logging.h>
+ void drawMatchesAndSave(const std::vector<map_closures::PointPair> & correspondences,
+ 						const std::vector<int> & inliers,
+@@ -86,10 +88,24 @@
+ 	return ratio;
+ }
+ 
+-int DescriptorDB::queryFeatureHamming(const std::shared_ptr<const DescriptorManager> &q_ptr,
+-                    std::vector<int> &cand_indx,
+-                    std::vector<double> &cand_corr,
+-                    Eigen::Matrix4d &pose) {
++int DescriptorDB::queryFeatureHamming(const std::shared_ptr<const DescriptorManager>& query,
++    std::vector<int>& ids, std::vector<double>& counts, Eigen::Matrix4d& pose, bool* height_valid) {
++  pose.setIdentity();
++  if (height_valid) *height_valid = false;
++  auto candidates = queryFeatureCandidates(query, 1);
++  if (!candidates.empty()) {
++    const auto& best = candidates.front();
++    ids.push_back(best.reference_id); counts.push_back(best.inliers); pose = best.pose;
++    if (height_valid) *height_valid = best.height_valid;
++  }
++  return last_match_count_;
++}
++
++std::vector<CoarseCandidate> DescriptorDB::queryFeatureCandidates(
++    const std::shared_ptr<const DescriptorManager>& q_ptr, size_t max_candidates) {
++  std::vector<CoarseCandidate> output;
++  last_height_pairs = last_empty_height_pairs = 0;
++  last_match_count_ = 0;
+ 	int distup = cfg_.dist_thres_;
+ 	cand_correspond_.clear();
+ 	descriptor_matches_.clear();
+@@ -140,38 +156,40 @@
+ 	std::cout<<"match_size"<<match_size<<" match_count"<<match_count<<std::endl;
+ 
+ 	// std::cout<<std::endl;
+-	std::vector<int> indices(descriptor_matches_.size()); 
+-	std::iota(indices.begin(), indices.end(), 0);//增量赋值0 1 2 3 4
+-
+-	auto compare_closure_candidates = [](ClosureCandidate a,
+-																					const ClosureCandidate &b) -> ClosureCandidate {
+-			return a.number_of_inliers > b.number_of_inliers ? a : b;
+-	};
+-	using iterator_type = std::vector<int>::const_iterator;
+-
+-	clk.tic();
+-	stp.start();
+-	const ClosureCandidate &bestclosure = tbb::parallel_reduce(
+-			tbb::blocked_range<iterator_type>{indices.cbegin(), indices.cend()}, ClosureCandidate(),
+-			[&](const tbb::blocked_range<iterator_type> &r,
+-					ClosureCandidate candidate) -> ClosureCandidate {
+-					return std::transform_reduce(
+-							r.begin(), r.end(), candidate, compare_closure_candidates, [&](const auto &ref_id) {
+-									const bool is_far_enough = std::abs(static_cast<int>(ref_id) - q_ptr->getIntID()) > cfg_.skip_num_;
+-									// const bool is_far_enough = true;
+-									return is_far_enough ? ValidateClosure(ref_id, q_ptr->getIntID()) : ClosureCandidate();
+-							});
+-			},
+-			compare_closure_candidates);
++  if(cfg_.enhanced_)return queryEnhanced(q_ptr,max_candidates);
++	std::vector<int> indices;
++  for (const auto& entry : descriptor_matches_) indices.push_back(entry.first);
++  std::sort(indices.begin(), indices.end());
++	////增量赋值0 1 2 3 4
++
++  std::vector<ClosureCandidate> closures(indices.size());
++  clk.tic(); stp.start();
++  tbb::parallel_for(tbb::blocked_range<size_t>(0, indices.size()),
++      [&](const tbb::blocked_range<size_t>& range) {
++        for (size_t k = range.begin(); k < range.end(); ++k) {
++          const int ref_id = indices[k];
++          if (std::abs(ref_id-q_ptr->getIntID()) > cfg_.skip_num_)
++            closures[k] = ValidateClosure(ref_id, q_ptr->getIntID());
++        }
++      });
++  std::sort(closures.begin(), closures.end(), [](const ClosureCandidate& a, const ClosureCandidate& b) {
++    if (a.number_of_inliers != b.number_of_inliers) return a.number_of_inliers > b.number_of_inliers;
++    return a.source_id < b.source_id;
++  });
+ 	stp.record("findBestMatch");
+ 	std::cout<<"Time findBestMatch "<<clk.toc()<<std::endl;
+ 
+-	if(bestclosure.number_of_inliers >= 5){ //to be tune for pr evaluation
++  last_match_count_ = match_count;
++  for (const auto& bestclosure : closures) {
++    if (bestclosure.number_of_inliers < 5 || output.size() >= max_candidates) break;
++    CoarseCandidate candidate;
++    candidate.reference_id = all_bevs_[bestclosure.source_id]->attach_idx_;
++    candidate.inliers = bestclosure.number_of_inliers;
++    Eigen::Matrix4d& pose = candidate.pose;
++    last_height_pairs = last_empty_height_pairs = 0;
+ 			const std::vector<int>& inliers_vec = bestclosure.inlier_vec;
+ 			int best_id = bestclosure.source_id;
+ 			//cand_ptrs.emplace_back(all_bevs_[best_id]);
+-			cand_indx.emplace_back(all_bevs_[best_id]->attach_idx_);//data seq idx for evaluate with gt
+-			cand_corr.emplace_back(bestclosure.number_of_inliers);
+ 			pose = bestclosure.pose;
+ 			std::cout <<"bev_" << best_id <<" inlier size " <<bestclosure.number_of_inliers<<std::endl;
+ 			
+@@ -217,6 +235,7 @@
+ 			
+ 			int count = 0;
+ 			for(int inlier_idx : inliers_vec){
++                ++last_height_pairs;
+ 				// std::cout<<" getbinary "<<std::endl;
+ 				boost::dynamic_bitset<> qur_bin = q_ptr->getKeyHeightBin(cand_correspond_[best_id][inlier_idx].qur_idx);
+ 				boost::dynamic_bitset<> ref_bin = all_bevs_[best_id]->getKeyHeightBin(cand_correspond_[best_id][inlier_idx].ref_idx);
+@@ -237,6 +256,7 @@
+ 
+ 				count++;
+ 				if(qur_begin == -1 || ref_begin == -1){
++                        ++last_empty_height_pairs;
+ 						std::cout<<"no 1"<<std::endl;
+ 						continue;
+ 				}
+@@ -287,12 +307,66 @@
+ 			else{
+ 				double relative_height = (qur_hmin + (optimal_offset+0.5) * qur_bin_res - (ref_hmax));//top bin is aligned
+ 				std::cout<<optimal_offset<<"offset with score "<<op_score<<" optimal height is "<<relative_height<<std::endl;
+-				pose(2,3) = relative_height;   //ref axe in qur axe i.e. ref point to qur 
++				candidate.height_valid = std::isfinite(relative_height);
++        pose(2,3) = relative_height;   //ref axe in qur axe i.e. ref point to qur 
+ 			}
+ 			stp.record("height align");
+ 			align_time = clk.toc();
+ 			std::cout<<"Time height codealign "<<align_time<<std::endl;
+ 			
++    candidate.height_pairs = last_height_pairs;
++    candidate.empty_height_pairs = last_empty_height_pairs;
++    output.push_back(candidate);
+ 	}
+-	return match_count;
+-}
+\ 文件尾没有换行符
++  if (!output.empty()) {
++    last_height_pairs = output.front().height_pairs;
++    last_empty_height_pairs = output.front().empty_height_pairs;
++  }
++  return output;
++}
++
++std::vector<CoarseCandidate> DescriptorDB::queryEnhanced(
++    const std::shared_ptr<const DescriptorManager>& query,size_t limit) {
++  std::vector<CoarseCandidate> output;std::vector<int> ids;
++  for(const auto& item:descriptor_matches_)ids.push_back(item.first);std::sort(ids.begin(),ids.end());
++  for(int id:ids){const auto reference=all_bevs_.at(id);std::vector<map_closures::PointPair> pairs;
++    for(const auto& match:descriptor_matches_.at(id))for(const auto& ref:match.object_references){
++      const auto r=ref.second,q=match.object_query.second;
++      map_closures::PointPair pair(Eigen::Vector2d((r.x()-cfg_.n_row_/2)*cfg_.reso_row_,(r.y()-cfg_.n_col_/2)*cfg_.reso_col_),
++        Eigen::Vector2d((q.x()-cfg_.n_row_/2)*cfg_.reso_row_,(q.y()-cfg_.n_col_/2)*cfg_.reso_col_),ref.first,match.object_query.first);
++      pair.dist=match.distance;pairs.push_back(pair);
++    }
++    std::sort(pairs.begin(),pairs.end(),[](const auto& a,const auto& b){
++      return std::make_tuple(a.dist,a.qur_idx,a.ref_idx)<std::make_tuple(b.dist,b.qur_idx,b.ref_idx);});
++    std::set<std::pair<int,int>> unique;
++    pairs.erase(std::remove_if(pairs.begin(),pairs.end(),[&](const auto& pair){return !unique.emplace(pair.ref_idx,pair.qur_idx).second;}),pairs.end());
++    const auto raw=pairs.size();if(pairs.size()>4096)pairs.resize(4096);
++    const auto hypotheses=map_closures::RansacHypotheses2D(pairs,
++      uint32_t(0x9e3779b9u*uint32_t(id+1)^uint32_t(query->getIntID()+1)),1000,cfg_.planar_inlier_distance_,1.);
++    for(const auto& h:hypotheses){if(h.inliers.size()<5)continue;
++      CoarseCandidate c;c.reference_id=reference->attach_idx_;c.inliers=h.inliers.size();c.planar_rmse=h.rmse;c.raw_correspondences=raw;
++      c.pose.block<2,2>(0,0)=h.pose.linear();c.pose.block<2,1>(0,3)=h.pose.translation();
++      int rn,qn;float rr,qr;reference->getBinInfo(rn,rr);query->getBinInfo(qn,qr);
++      const auto rh=reference->getHightMinMax(),qh=query->getHightMinMax();
++      std::vector<int> add(rn+qn,0),sub(rn+qn,0);
++      for(int index:h.inliers){++c.height_pairs;const auto& pair=pairs[index];
++        const auto rb=reference->getKeyHeightBin(pair.ref_idx),qb=query->getKeyHeightBin(pair.qur_idx);
++        if(!rb.any()||!qb.any()){++c.empty_height_pairs;continue;}
++        int rbegin=rb.find_first(),qbegin=qb.find_first();
++        int rend=std::min(rn-1,std::max(int(std::floor(-rh.second/rr)),find_last(rb)));
++        int qend=std::min(qn-1,std::max(int(std::floor(-qh.second/qr)),find_last(qb)));
++        for(int offset=0;offset<rn+qn;++offset){int lo=std::max(qbegin,offset-(rn-rbegin)+1),hi=std::min(qend,offset-(rn-rend)+1);
++          for(int k=lo;k<=hi;++k){if(qb[k]==rb[k-offset+rn-1])++add[offset];else --sub[offset];}}
++      }
++      int best=-1;for(int i=0;i<rn+qn;++i)
++        if(best<0||add[i]+sub[i]>add[best]+sub[best]||(add[i]+sub[i]==add[best]+sub[best]&&add[i]>add[best]))best=i;
++      if(best>=0&&add[best]>0){c.pose(2,3)=qh.second+(best+.5)*qr-rh.first;c.height_valid=std::isfinite(c.pose(2,3));}
++      output.push_back(c);
++    }
++  }
++  std::stable_sort(output.begin(),output.end(),[](const auto& a,const auto& b){
++    if(a.inliers!=b.inliers)return a.inliers>b.inliers;
++    if(a.planar_rmse!=b.planar_rmse)return a.planar_rmse<b.planar_rmse;
++    return a.reference_id<b.reference_id;});
++  if(output.size()>limit)output.resize(limit);return output;
++}
+--- a/src/ehpr/AlignRansac2D.cpp
++++ b/src/ehpr/AlignRansac2D.cpp
+@@ -30,6 +30,7 @@
+ #include <random>
+ #include <utility>
+ #include <vector>
++#include <array>
+ 
+ namespace {
+ Eigen::Isometry2d KabschUmeyamaAlignment2D(
+@@ -52,8 +53,10 @@
+     Eigen::JacobiSVD<Eigen::Matrix2d> svd(covariance_matrix,
+                                           Eigen::ComputeFullU | Eigen::ComputeFullV);
+     Eigen::Isometry2d T = Eigen::Isometry2d::Identity();
+-    const Eigen::Matrix2d &&R = svd.matrixV() * svd.matrixU().transpose();
+-    T.linear() = R.determinant() > 0 ? R : -R;
++    Eigen::Matrix2d correction = Eigen::Matrix2d::Identity();
++    correction(1, 1) = (svd.matrixV() * svd.matrixU().transpose()).determinant() < 0 ? -1.0 : 1.0;
++    const Eigen::Matrix2d R = svd.matrixV() * correction * svd.matrixU().transpose();
++    T.linear() = R;
+     T.translation() = mean.query - R * mean.ref;
+ 
+     return T;
+@@ -141,6 +144,7 @@
+ 
+ 
+   std::pair<Eigen::Isometry2d,  std::vector<int>> RansacAlignment2D(const std::vector<PointPair> &keypoint_pairs) {
++    if (keypoint_pairs.size() < 2) return {Eigen::Isometry2d::Identity(), {}};
+     const int convergence_threshold = 1; 
+     const int max_convergence_count = 5; 
+     int convergence_counter = 0; 
+@@ -155,7 +159,7 @@
+ 
+     int iter = 0;
+     int previous_best_inliers = 0;
+-    std::mt19937 rng(std::random_device{}());
++    std::mt19937 rng(0);
+     while (iter++ < __RANSAC_TRIALS__) {
+         inlier_indices.clear();
+ 
+@@ -181,6 +185,7 @@
+     }
+ 
+     const int num_inliers = optimal_inlier_indices.size();
++    if (num_inliers < 2) return {Eigen::Isometry2d::Identity(), {}};
+     std::vector<PointPair> inlier_keypoint_pairs(num_inliers);
+     std::transform(optimal_inlier_indices.cbegin(), optimal_inlier_indices.cend(),
+                    inlier_keypoint_pairs.begin(),
+@@ -190,3 +195,40 @@
+     return {T, optimal_inlier_indices};
+   }
+ }  // namespace map_closures
++
++namespace map_closures {
++std::vector<RansacHypothesis> RansacHypotheses2D(const std::vector<PointPair>& pairs,
++    uint32_t seed, int trials, double threshold, double minimum_baseline) {
++  std::vector<RansacHypothesis> best;
++  if(pairs.size()<2)return best;
++  auto score=[&](const Eigen::Isometry2d& pose){
++    std::vector<std::pair<double,int>> eligible;
++    for(size_t i=0;i<pairs.size();++i){double error=(pose*pairs[i].ref-pairs[i].query).squaredNorm();
++      if(error<threshold*threshold)eligible.emplace_back(error,int(i));}
++    std::sort(eligible.begin(),eligible.end());std::array<bool,512> used_ref{},used_query{};
++    RansacHypothesis h;h.pose=pose;double sum=0;
++    for(const auto& e:eligible){const auto& pair=pairs[e.second];
++      if(pair.ref_idx<0||pair.qur_idx<0||pair.ref_idx>=512||pair.qur_idx>=512)continue;
++      if(used_ref[pair.ref_idx]||used_query[pair.qur_idx])continue;
++      used_ref[pair.ref_idx]=used_query[pair.qur_idx]=true;h.inliers.push_back(e.second);sum+=e.first;}
++    h.rmse=h.inliers.empty()?1e9:std::sqrt(sum/h.inliers.size());return h;
++  };
++  auto better=[](const RansacHypothesis& a,const RansacHypothesis& b){
++    return a.inliers.size()!=b.inliers.size()?a.inliers.size()>b.inliers.size():a.rmse<b.rmse;};
++  std::mt19937 rng(seed);std::uniform_int_distribution<size_t> pick(0,pairs.size()-1);
++  for(int trial=0;trial<trials;++trial){auto i=pick(rng),j=pick(rng);const auto& a=pairs[i];const auto& b=pairs[j];
++    if(a.ref_idx==b.ref_idx||a.qur_idx==b.qur_idx ||
++       (a.ref-b.ref).norm()<minimum_baseline||(a.query-b.query).norm()<minimum_baseline)continue;
++    auto h=score(KabschUmeyamaAlignment2D({a,b}));if(h.inliers.size()<3)continue;
++    for(int k=0;k<2;++k){std::vector<PointPair> fit;for(int index:h.inliers)fit.push_back(pairs[index]);
++      auto next=score(KabschUmeyamaAlignment2D(fit));if(!better(next,h))break;h=std::move(next);}
++    if(!h.pose.matrix().allFinite()||std::abs(h.pose.linear().determinant()-1)>1e-6)continue;
++    bool equivalent=false;
++    for(auto& old:best){const auto relative=old.pose.inverse()*h.pose;
++      if(relative.translation().norm()<1&&std::abs(std::atan2(relative(1,0),relative(0,0)))<.1745329252){
++        if(better(h,old))old=h;equivalent=true;break;}}
++    if(!equivalent)best.push_back(h);std::stable_sort(best.begin(),best.end(),better);if(best.size()>3)best.resize(3);
++  }
++  return best;
++}
++}
