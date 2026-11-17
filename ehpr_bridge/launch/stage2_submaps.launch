@@ -1,0 +1,10 @@
+<launch>
+  <arg name="robot" default="both"/>
+  <arg name="config" default="$(find ehpr_bridge)/config/stage2.yaml"/>
+  <arg name="output_root" default="$(find start_up)/../../results/stage2"/>
+  <node pkg="ehpr_bridge" type="stage2_submap_node" name="stage2_submap_builder" output="screen">
+    <param name="robot" value="$(arg robot)"/>
+    <param name="config" value="$(arg config)"/>
+    <param name="output_root" value="$(arg output_root)"/>
+  </node>
+</launch>

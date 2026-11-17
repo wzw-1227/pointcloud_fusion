@@ -1,0 +1,26 @@
+# Parameters match the pinned upstream config/multisession_video.yaml.
+upstream_commit: b4b7137f7e675974e025fc3c8e0ab891d353739a
+voxel_map:
+  voxel_size: 1.0
+  max_distance: 20.0
+  max_points_per_voxel: 25
+  remove_distance: 80.0
+sync_queue_size: 100
+max_gap_seconds: 1.0
+max_translation_jump_m: 1.0
+max_rotation_jump_deg: 45.0
+robots:
+  ugv:
+    robot_id: 0
+    lio_namespace: /
+    cloud_topic: /lio_sam/mapping/cloud_registered_raw
+    odometry_topic: /lio_sam/mapping/odometry
+    reference_frame: odom
+    mapping_child: odom_mapping
+  uav:
+    robot_id: 1
+    lio_namespace: /uav
+    cloud_topic: /uav/lio_sam/mapping/cloud_registered_raw
+    odometry_topic: /uav/lio_sam/mapping/odometry
+    reference_frame: uav_lio_odom
+    mapping_child: uav_odom_mapping

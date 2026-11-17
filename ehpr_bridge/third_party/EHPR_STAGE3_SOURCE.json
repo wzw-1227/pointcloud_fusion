@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "b4b7137f7e675974e025fc3c8e0ab891d353739a",
+  "repository": "https://github.com/SYSU-RoboticsLab/EHPR",
+  "verified_against": "pinned raw.githubusercontent.com files",
+  "files_sha256": {
+    "include/ehpr/desc_mng.h": "7784d8a291e4fe97eca188d8f20ed507a3ebc38a42c87fc10c26d2861820b997",
+    "include/ehpr/desc_db.h": "005140bf1f1ea808c1fadce9a82b4759c3c78efb188d4c0ea47647152fda1f26",
+    "include/ehpr/AlignRansac2D.h": "22fd92cc8c9764a6ea91db2bc086cef0f390333d42e4896d0393f67d16444a03",
+    "src/ehpr/desc_mng.cpp": "98c725fc667ff1a13f91498ba39e94b6a3a1bf74d49c480711cf615293721975",
+    "src/ehpr/desc_db.cpp": "ee1f3bb2717fe8dd7f07f4c6af4a4247587f2460f8dec90918b4d19ed22dd0ff",
+    "src/ehpr/AlignRansac2D.cpp": "bc6d75bf233cabee705c6c54a1b1b9928fbc76733346b1b4aef2fdeba793e0bb"
+  }
+}
