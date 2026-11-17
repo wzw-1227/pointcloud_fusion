@@ -1,0 +1,92 @@
+robots:
+  ugv:
+    namespace: /
+    raw_cloud: /ugv/velodyne_points
+    imu: /imu
+    raw_frame: velodyne
+    imu_message_frame: imu
+    lidar_frame: velodyne
+    base_frame: base_link
+    reference_frame: odom
+    mapping_child: odom_mapping
+    imu_tf_frame: imu
+    odometry: /lio_sam/mapping/odometry
+    registered: /lio_sam/mapping/cloud_registered
+    registered_raw: /lio_sam/mapping/cloud_registered_raw
+    deskewed: /lio_sam/deskew/cloud_deskewed
+    path: /lio_sam/mapping/path
+    debug: /lio_sam/debug/scan2map
+    ground_truth: /stage1/ugv/ground_truth/lidar_odom
+    model_name: xiaoqiang
+    model_to_lidar_xyz:
+    - 0.2
+    - 0
+    - 0.3477
+    base_to_lidar_xyz:
+    - 0.2
+    - 0
+    - 0.1677
+    base_to_imu_xyz:
+    - 0
+    - 0
+    - 0
+    publish_lidar_tf: true
+    n_scan: 16
+    horizon_scan: 1800
+    point_time_unit: seconds
+    require_nonzero_point_time: false
+    gravity: 9.8
+    lio_input_cloud: /stage1/ugv/points
+  uav:
+    namespace: /uav
+    raw_cloud: /velodyne_points
+    imu: /iris_0/imu_gazebo
+    raw_frame: laser_3d
+    imu_message_frame: imu_link_stereo
+    lidar_frame: uav/laser_3d
+    base_frame: uav/base_link
+    reference_frame: uav_lio_odom
+    mapping_child: uav_odom_mapping
+    imu_tf_frame: uav/imu_link_stereo
+    odometry: /uav/lio_sam/mapping/odometry
+    registered: /uav/lio_sam/mapping/cloud_registered
+    registered_raw: /uav/lio_sam/mapping/cloud_registered_raw
+    deskewed: /uav/lio_sam/deskew/cloud_deskewed
+    path: /uav/lio_sam/mapping/path
+    debug: /uav/lio_sam/debug/scan2map
+    ground_truth: /stage1/uav/ground_truth/lidar_odom
+    model_name: iris_0
+    model_to_lidar_xyz: &id001
+    - 0
+    - 0
+    - 0.08
+    base_to_lidar_xyz: *id001
+    base_to_imu_xyz:
+    - 0
+    - 0
+    - 0.25
+    publish_lidar_tf: false
+    n_scan: 16
+    horizon_scan: 1800
+    point_time_unit: seconds
+    require_nonzero_point_time: false
+    gravity: 9.8
+    lio_input_cloud: /stage1/uav/points
+acceptance:
+  warmup_seconds: 15.0
+  min_static_seconds: 60.0
+  max_output_gap: 1.0
+  max_sync_gap: 0.05
+  max_pose_rmse:
+    ugv: 0.2
+    uav: 0.3
+  max_static_rmse:
+    ugv: 0.1
+    uav: 0.2
+  max_rotation_rmse_deg: 5.0
+  max_continuous_degeneracy: 2.0
+  min_motion_distance: 20.0
+  min_quarter_turns: 4
+  min_height_excursion: 0.5
+  min_uav_hover_height_m: 1.0
+  min_coexist_phase_seconds: 10.0

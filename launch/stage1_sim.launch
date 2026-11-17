@@ -1,0 +1,89 @@
+<launch>
+  <arg name="sim_profile" default="legacy"/>
+  <arg name="uav_sensor_profile" default="$(arg sim_profile)"/>
+  <param name="/stage1/sim_profile" value="$(eval {'stable':'stable','legacy':'legacy'}[arg('sim_profile')])"/>
+  <arg name="robot" default="both"/>
+  <arg name="gui" default="true"/>
+  <arg name="rviz" default="true"/>
+  <arg name="manual_control" default="true"/>
+  <!-- Algorithm diagnostic entry can run the sensors without an estimator. -->
+  <arg name="enable_lio" default="true"/>
+  <arg name="ground_truth_source" default="receipt"/>
+  <param name="/stage1/ground_truth_source" value="$(eval {'receipt':'receipt','stamped':'stamped'}[arg('ground_truth_source')])"/>
+  <param name="/stage1/stamped_truth_loaded" value="false"/>
+  <arg name="loop_closure" default="config"/>
+  <arg name="world" default="$(eval find('start_up') + '/worlds/stage1_stable.world' if arg('sim_profile') == 'stable' else find('mavlink_sitl_gazebo') + '/worlds/ego_swarm_edit.world')"/>
+  <arg name="contract" default="$(eval find('start_up') + '/config/stage1_stable_contract.yaml' if arg('uav_sensor_profile') in ['stable','wide'] else find('start_up') + '/config/stage1_contract.yaml')"/>
+  <arg name="ugv_config" default="$(find start_up)/config/stage1_ugv_sim.yaml"/>
+  <arg name="uav_config" default="$(eval find('start_up') + '/config/stage1_uav_stable.yaml' if arg('uav_sensor_profile') in ['stable','wide'] else find('start_up') + '/config/stage1_uav_sim.yaml')"/>
+  <arg name="ugv_x" default="-7.0"/>
+  <arg name="ugv_y" default="-8.5"/>
+  <arg name="uav_x" default="1.0"/>
+  <arg name="uav_y" default="0.0"/>
+  <arg name="uav_z" default="0.3"/>
+  <!-- Dictionary lookup deliberately rejects unsupported robot selections. -->
+  <param name="/stage1/robot" value="$(eval {'ugv':'ugv','uav':'uav','both':'both'}[arg('robot')])"/>
+  <param name="/stage1/uav_sensor_profile" value="$(eval {'stable':'stable','legacy':'legacy','wide':'wide'}[arg('uav_sensor_profile')])"/>
+  <param name="/stage1/world_file" value="$(arg world)"/>
+  <param name="/stage1/environment" value="sim"/>
+  <param name="/stage1/contract_file" value="$(arg contract)"/>
+  <param name="/use_sim_time" value="true"/>
+
+  <include if="$(eval arg('robot') == 'ugv')" file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="use_sim_time" value="true"/>
+  </include>
+  <include if="$(eval arg('robot') in ['uav','both'])" file="$(find uav_bringup)/launch/px4_sitl.launch">
+    <arg name="px4_launch_file" value="$(eval {'stable':find('start_up') + '/launch/stage1_px4_stable.launch','wide':find('start_up') + '/launch/stage1_px4_wide.launch','legacy':find('px4') + '/launch/test.launch'}[arg('uav_sensor_profile')])"/>
+    <arg name="world" value="$(arg world)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="x" value="$(arg uav_x)"/>
+    <arg name="y" value="$(arg uav_y)"/>
+    <arg name="z" value="$(arg uav_z)"/>
+    <arg name="uav_base_frame" value="uav/base_link"/>
+    <arg name="uav_lidar_frame" value="uav/laser_3d"/>
+    <arg name="mavros_local_tf" value="false"/>
+  </include>
+
+  <group if="$(eval arg('robot') in ['ugv','both'])">
+    <node pkg="start_up" type="stage1_cloud_gate_node" name="stage1_ugv_cloud_gate" required="true">
+      <param name="robot" value="ugv"/>
+    </node>
+    <param name="robot_description" command="$(find xacro)/xacro $(find xiaoqiang_udrf)/xacro/all_velodyne.xacro lidar_topic:=/ugv/velodyne_points"/>
+    <node pkg="gazebo_ros" type="spawn_model" name="stage1_spawn_ugv"
+      args="-urdf -param robot_description -model xiaoqiang -x $(arg ugv_x) -y $(arg ugv_y) -z 0" output="screen"/>
+    <!-- Sensor TF only: no URDF base_footprint->base_link competing with LIO. -->
+    <node pkg="start_up" type="stage1_sensor_tf.py" name="stage1_ugv_sensor_tf" required="true">
+      <param name="robot" value="ugv"/>
+    </node>
+    <include if="$(arg enable_lio)" file="$(find start_up)/launch/stage1_lio.launch">
+      <arg name="config_file" value="$(arg ugv_config)"/>
+      <arg name="robot" value="ugv"/>
+      <arg name="loop_closure" value="$(arg loop_closure)"/>
+    </include>
+    <node if="$(arg manual_control)" pkg="start_up" type="stage1_ugv_guard.py" name="stage1_ugv_guard"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="stage1_viz_ugv"
+      args="$(arg ugv_x) $(arg ugv_y) 0 0 0 0 viz_world map"/>
+  </group>
+  <group if="$(eval arg('robot') in ['uav','both'])">
+    <node pkg="start_up" type="stage1_cloud_gate_node" name="stage1_uav_cloud_gate" required="true">
+      <param name="robot" value="uav"/>
+    </node>
+    <node pkg="start_up" type="stage1_sensor_tf.py" name="stage1_uav_sensor_tf" required="true">
+      <param name="robot" value="uav"/>
+    </node>
+    <include if="$(arg enable_lio)" file="$(find start_up)/launch/stage1_lio.launch">
+      <arg name="namespace" value="uav"/>
+      <arg name="config_file" value="$(arg uav_config)"/>
+      <arg name="robot" value="uav"/>
+      <arg name="loop_closure" value="$(arg loop_closure)"/>
+    </include>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="stage1_viz_uav"
+      args="$(arg uav_x) $(arg uav_y) $(arg uav_z) 0 0 0 viz_world uav_lio_map"/>
+  </group>
+  <node if="$(eval arg('ground_truth_source') == 'receipt')" pkg="start_up" type="stage1_ground_truth.py" name="stage1_ground_truth" required="true"/>
+  <node if="$(arg enable_lio)" pkg="start_up" type="stage1_monitor.py" name="stage1_monitor" required="true"/>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="stage1_rviz"
+    args="-d $(find start_up)/rviz/multi_robot_lio.rviz"/>
+</launch>

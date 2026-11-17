@@ -1,0 +1,66 @@
+# Hardware topic/frame contract; sensor mounts are measured in each hardware profile.
+robots:
+  ugv:
+    namespace: /
+    raw_cloud: /hardware/ugv/points
+    imu: /hardware/ugv/imu
+    raw_frame: REPLACE_LIDAR_FRAME
+    imu_message_frame: REPLACE_IMU_FRAME
+    lidar_frame: velodyne
+    base_frame: base_link
+    reference_frame: odom
+    mapping_child: odom_mapping
+    imu_tf_frame: imu
+    odometry: /lio_sam/mapping/odometry
+    registered: /lio_sam/mapping/cloud_registered
+    registered_raw: /lio_sam/mapping/cloud_registered_raw
+    deskewed: /lio_sam/deskew/cloud_deskewed
+    path: /lio_sam/mapping/path
+    debug: /lio_sam/debug/scan2map
+    ground_truth: /stage1/ugv/ground_truth/lidar_odom
+    n_scan: null
+    horizon_scan: null
+    point_time_unit: seconds
+    require_nonzero_point_time: true
+    gravity: 9.8
+  uav:
+    namespace: /uav
+    raw_cloud: /hardware/uav/points
+    imu: /hardware/uav/imu
+    raw_frame: REPLACE_LIDAR_FRAME
+    imu_message_frame: REPLACE_IMU_FRAME
+    lidar_frame: uav/laser_3d
+    base_frame: uav/base_link
+    reference_frame: uav_lio_odom
+    mapping_child: uav_odom_mapping
+    imu_tf_frame: uav/imu_link_stereo
+    odometry: /uav/lio_sam/mapping/odometry
+    registered: /uav/lio_sam/mapping/cloud_registered
+    registered_raw: /uav/lio_sam/mapping/cloud_registered_raw
+    deskewed: /uav/lio_sam/deskew/cloud_deskewed
+    path: /uav/lio_sam/mapping/path
+    debug: /uav/lio_sam/debug/scan2map
+    ground_truth: /stage1/uav/ground_truth/lidar_odom
+    n_scan: null
+    horizon_scan: null
+    point_time_unit: seconds
+    require_nonzero_point_time: true
+    gravity: 9.8
+acceptance:
+  warmup_seconds: 15.0
+  min_static_seconds: 60.0
+  max_output_gap: 1.0
+  max_sync_gap: 0.05
+  max_pose_rmse:
+    ugv: 0.2
+    uav: 0.3
+  max_static_rmse:
+    ugv: 0.1
+    uav: 0.2
+  max_rotation_rmse_deg: 5.0
+  max_continuous_degeneracy: 2.0
+  min_motion_distance: 20.0
+  min_quarter_turns: 4
+  min_height_excursion: 0.5
+  min_coexist_phase_seconds: 10.0
+hardware_configured: false

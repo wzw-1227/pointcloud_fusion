@@ -1,0 +1,230 @@
+--- a/src/mapOptmization.cpp
++++ b/src/mapOptmization.cpp
+@@ -1,3 +1,4 @@
++#include "scanStateGuard.h"
+ #include "utility.h"
+ #include "lio_sam/cloud_info.h"
+ #include "lio_sam/Scan2MapDebug.h"
+@@ -160,8 +161,10 @@
+     nav_msgs::Path globalPath;
+ 
+     Eigen::Affine3f transPointAssociateToMap;
+-    Eigen::Affine3f incrementalOdometryAffineFront;
+-    Eigen::Affine3f incrementalOdometryAffineBack;
++    Eigen::Affine3f incrementalOdometryAffineFront = Eigen::Affine3f::Identity();
++    Eigen::Affine3f incrementalOdometryAffineBack = Eigen::Affine3f::Identity();
++    bool scanOptimizationPerformed = false;
++    bool scanOptimizationFailed = false;
+ 
+ 
+     mapOptimization()
+@@ -287,6 +290,8 @@
+         if (!enableScan2MapDebug)
+             return;
+ 
++        scan2MapDebugMsg.optimization_performed = scanOptimizationPerformed;
++        scan2MapDebugMsg.is_degenerate = isDegenerate;
+         scan2MapDebugMsg.pose.position.x = transformTobeMapped[3];
+         scan2MapDebugMsg.pose.position.y = transformTobeMapped[4];
+         scan2MapDebugMsg.pose.position.z = transformTobeMapped[5];
+@@ -316,7 +321,29 @@
+         {
+             timeLastProcessing = timeLaserInfoCur;
+ 
++            const float incomingGuess[6] = {cloudInfo.initialGuessRoll, cloudInfo.initialGuessPitch,
++                cloudInfo.initialGuessYaw, cloudInfo.initialGuessX, cloudInfo.initialGuessY, cloudInfo.initialGuessZ};
++            if (!std::isfinite(cloudInfo.imuRollInit) || !std::isfinite(cloudInfo.imuPitchInit) ||
++                !std::isfinite(cloudInfo.imuYawInit) ||
++                (cloudInfo.odomAvailable && !lio_state_guard::finitePose(incomingGuess))) {
++                ROS_WARN_THROTTLE(1.0, "Nonfinite incoming pose prediction; scan rejected before state update");
++                return;
++            }
++            // No scan may inherit the previous scan's projection or validity.
++            isDegenerate = true;
++            matP = cv::Mat::eye(6, 6, CV_32F);
++            scanOptimizationPerformed = false;
++            scanOptimizationFailed = false;
++            float previousPose[6];
++            std::copy(transformTobeMapped, transformTobeMapped+6, previousPose);
+             updateInitialGuess();
++            if (!lio_state_guard::finitePose(transformTobeMapped)) {
++                std::copy(previousPose, previousPose+6, transformTobeMapped);
++                ROS_ERROR_THROTTLE(1.0, "Nonfinite IMU pose prediction; scan rejected");
++                return;
++            }
++            float predictedPose[6];
++            std::copy(transformTobeMapped, transformTobeMapped+6, predictedPose);
+ 
+             extractSurroundingKeyFrames();
+ 
+@@ -326,9 +353,28 @@
+ 
+             scan2MapOptimization();
+ 
+-            saveKeyFramesAndFactor();
++            if (scanOptimizationFailed || !lio_state_guard::finitePose(transformTobeMapped)) {
++                std::copy(predictedPose, predictedPose+6, transformTobeMapped);
++                isDegenerate = true;
++                scanOptimizationPerformed = false;
++                scan2MapDebugMsg.optimization_performed = false;
++                ROS_WARN_THROTTLE(1.0, "Scan optimization failed; using finite prediction with weak correction");
++            }
++            // Always finalize this scan, including insufficient-feature scans.
++            transformUpdate();
++            if (!lio_state_guard::finitePose(transformTobeMapped)) return;
++            // Permit the first valid keyframe; later prediction-only scans are
++            // published for continuity but must not contaminate the local map.
++            if ((cloudKeyPoses3D->empty() && laserCloudCornerLastDSNum >= 5 && laserCloudSurfLastDSNum >= 5) || scanOptimizationPerformed)
++                saveKeyFramesAndFactor();
++            if (!ros::ok()) return;
+ 
+             correctPoses();
++            if (!lio_state_guard::finitePose(transformTobeMapped)) {
++                ROS_FATAL("Nonfinite factor-graph pose; stopping before publishing invalid state");
++                ros::shutdown();
++                return;
++            }
+ 
+             publishOdometry();
+ 
+@@ -856,7 +902,7 @@
+         // save current transformation before any processing
+         incrementalOdometryAffineFront = trans2Affine3f(transformTobeMapped);
+ 
+-        static Eigen::Affine3f lastImuTransformation;
++        static Eigen::Affine3f lastImuTransformation = Eigen::Affine3f::Identity();
+         // initialization
+         if (cloudKeyPoses3D->points.empty())
+         {
+@@ -873,7 +919,7 @@
+ 
+         // use imu pre-integration estimation for pose guess
+         static bool lastImuPreTransAvailable = false;
+-        static Eigen::Affine3f lastImuPreTransformation;
++        static Eigen::Affine3f lastImuPreTransformation = Eigen::Affine3f::Identity();
+         if (cloudInfo.odomAvailable == true)
+         {
+             Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.initialGuessX,    cloudInfo.initialGuessY,     cloudInfo.initialGuessZ, 
+@@ -1052,7 +1098,8 @@
+ 
+             pointOri = laserCloudCornerLastDS->points[i];
+             pointAssociateToMap(&pointOri, &pointSel);
+-            kdtreeCornerFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
++            if (kdtreeCornerFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis) < 5)
++                continue;
+ 
+             cv::Mat matA1(3, 3, CV_32F, cv::Scalar::all(0));
+             cv::Mat matD1(1, 3, CV_32F, cv::Scalar::all(0));
+@@ -1103,6 +1150,8 @@
+ 
+                     float l12 = sqrt((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2) + (z1 - z2)*(z1 - z2));
+ 
++                    if (!std::isfinite(a012) || !std::isfinite(l12) || a012 <= 1e-8f || l12 <= 1e-8f)
++                        continue;
+                     float la = ((y1 - y2)*((x0 - x1)*(y0 - y2) - (x0 - x2)*(y0 - y1)) 
+                               + (z1 - z2)*((x0 - x1)*(z0 - z2) - (x0 - x2)*(z0 - z1))) / a012 / l12;
+ 
+@@ -1121,7 +1170,8 @@
+                     coeff.z = s * lc;
+                     coeff.intensity = s * ld2;
+ 
+-                    if (s > 0.1) {
++                    if (s > 0.1 && std::isfinite(coeff.x) && std::isfinite(coeff.y) &&
++                        std::isfinite(coeff.z) && std::isfinite(coeff.intensity)) {
+                         laserCloudOriCornerVec[i] = pointOri;
+                         coeffSelCornerVec[i] = coeff;
+                         laserCloudOriCornerFlag[i] = true;
+@@ -1144,7 +1194,8 @@
+ 
+             pointOri = laserCloudSurfLastDS->points[i];
+             pointAssociateToMap(&pointOri, &pointSel); 
+-            kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
++            if (kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis) < 5)
++                continue;
+ 
+             Eigen::Matrix<float, 5, 3> matA0;
+             Eigen::Matrix<float, 5, 1> matB0;
+@@ -1169,6 +1220,8 @@
+                 float pd = 1;
+ 
+                 float ps = sqrt(pa * pa + pb * pb + pc * pc);
++                if (!std::isfinite(ps) || ps <= 1e-8f)
++                    continue;
+                 pa /= ps; pb /= ps; pc /= ps; pd /= ps;
+ 
+                 bool planeValid = true;
+@@ -1192,7 +1245,8 @@
+                     coeff.z = s * pc;
+                     coeff.intensity = s * pd2;
+ 
+-                    if (s > 0.1) {
++                    if (s > 0.1 && std::isfinite(coeff.x) && std::isfinite(coeff.y) &&
++                        std::isfinite(coeff.z) && std::isfinite(coeff.intensity)) {
+                         laserCloudOriSurfVec[i] = pointOri;
+                         coeffSelSurfVec[i] = coeff;
+                         laserCloudOriSurfFlag[i] = true;
+@@ -1321,7 +1375,10 @@
+         cv::transpose(matA, matAt);
+         matAtA = matAt * matA;
+         matAtB = matAt * matB;
+-        cv::solve(matAtA, matAtB, matX, cv::DECOMP_QR);
++        if (!lio_state_guard::solve(matAtA, matAtB, matX)) {
++            scanOptimizationFailed = true;
++            return true;
++        }
+ 
+         if (iterCount == 0) {
+ 
+@@ -1329,7 +1386,10 @@
+             cv::Mat matV(6, 6, CV_32F, cv::Scalar::all(0));
+             cv::Mat matV2(6, 6, CV_32F, cv::Scalar::all(0));
+ 
+-            cv::eigen(matAtA, matE, matV);
++            if (!cv::eigen(matAtA, matE, matV) || !cv::checkRange(matE) || !cv::checkRange(matV)) {
++                scanOptimizationFailed = true;
++                return true;
++            }
+             matV.copyTo(matV2);
+ 
+             isDegenerate = false;
+@@ -1345,6 +1405,7 @@
+                 }
+             }
+             matP = matV.inv() * matV2;
++            scanOptimizationPerformed = true;
+ 
+             if (enableScan2MapDebug)
+             {
+@@ -1451,7 +1512,6 @@
+                     break;              
+             }
+ 
+-            transformUpdate();
+         } else {
+             ROS_WARN("Not enough features! Only %d edge and %d planar features available.", laserCloudCornerLastDSNum, laserCloudSurfLastDSNum);
+         }
+@@ -1682,6 +1742,15 @@
+ 
+         isamCurrentEstimate = isam->calculateEstimate();
+         latestEstimate = isamCurrentEstimate.at<Pose3>(isamCurrentEstimate.size()-1);
++        const float estimatePose[6] = {float(latestEstimate.rotation().roll()),
++            float(latestEstimate.rotation().pitch()), float(latestEstimate.rotation().yaw()),
++            float(latestEstimate.translation().x()), float(latestEstimate.translation().y()),
++            float(latestEstimate.translation().z())};
++        if (!latestEstimate.matrix().allFinite() || !lio_state_guard::finitePose(estimatePose)) {
++            ROS_FATAL("Nonfinite factor-graph estimate; stopping before saving invalid keyframe");
++            ros::shutdown();
++            return;
++        }
+         // cout << "****************************************************" << endl;
+         // isamCurrentEstimate.print("Current estimate: ");
+ 
+@@ -1808,7 +1877,7 @@
+             laserOdomIncremental = laserOdometryROS;
+             increOdomAffine = trans2Affine3f(transformTobeMapped);
+         } else {
+-            Eigen::Affine3f affineIncre = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
++            Eigen::Affine3f affineIncre = lio_state_guard::increment(incrementalOdometryAffineFront, incrementalOdometryAffineBack);
+             increOdomAffine = increOdomAffine * affineIncre;
+             float x, y, z, roll, pitch, yaw;
+             pcl::getTranslationAndEulerAngles (increOdomAffine, x, y, z, roll, pitch, yaw);

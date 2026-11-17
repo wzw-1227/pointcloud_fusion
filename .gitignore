@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# 数据/记录文件（源码溯源记录，非代码）
+patches/lio_source_record.json
+config/*source_record.json
+
+# 构建产物
+build/
+devel/
+install/
+log/

@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- ROS1 Noetic: PX4 owns the only Gazebo Classic server. -->
+  <arg name="world" default="$(find mavlink_sitl_gazebo)/worlds/ego_swarm_edit.world"/>
+  <arg name="gui" default="true"/>
+  <arg name="paused" default="false"/>
+
+  <!-- PX4/UAV initial pose; the hover target is relative to this local origin. -->
+  <arg name="uav_x" default="1.0"/>
+  <arg name="uav_y" default="0.0"/>
+  <arg name="uav_z" default="0.3"/>
+  <arg name="takeoff_height" default="1.5"/>
+
+  <!-- Spawn the UGV away from the PX4 vehicle and the central arena. -->
+  <arg name="ugv_x" default="-7.0"/>
+  <arg name="ugv_y" default="-8.5"/>
+  <arg name="ugv_z" default="0.0"/>
+
+  <!-- Start PX4 and the shared Gazebo world exactly once. -->
+  <include file="$(find uav_bringup)/launch/px4_sitl.launch">
+    <arg name="world" value="$(arg world)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="paused" value="$(arg paused)"/>
+    <arg name="x" value="$(arg uav_x)"/>
+    <arg name="y" value="$(arg uav_y)"/>
+    <arg name="z" value="$(arg uav_z)"/>
+    <arg name="sdf" value="iris_3d_lidar"/>
+    <arg name="uav_base_frame" value="uav/base_link"/>
+    <arg name="uav_lidar_frame" value="uav/laser_3d"/>
+  </include>
+
+  <!-- UGV bringup joins the running world, starts its own LIO-SAM and nav stack. -->
+  <include file="$(find robot_bringup)/launch/lio_sam_test.launch">
+    <arg name="gazebo_use" value="true"/>
+    <arg name="start_gazebo" value="false"/>
+    <arg name="start_rviz" value="false"/>
+    <arg name="lidar_topic" value="/ugv/velodyne_points"/>
+    <arg name="imu_topic" value="/imu"/>
+    <arg name="pointcloud_params" value="$(find learning_navigation)/param/costmap_common_params_pointcloud_ugv.yaml"/>
+    <arg name="x_pos" value="$(arg ugv_x)"/>
+    <arg name="y_pos" value="$(arg ugv_y)"/>
+    <arg name="z_pos" value="$(arg ugv_z)"/>
+  </include>
+
+  <!-- Override the real-robot IMU extrinsics that lio_sam/run.launch loaded from
+       LIO-SAM/config/params.yaml: in Gazebo the IMU frame is axis-aligned with the
+       lidar frame, and the IMU sits at the base_link origin while the lidar sits
+       at base_link + (0.20, 0, 0.13), so extTrans = IMU position in lidar frame.
+       Without this the flipped gravity drives IMU preintegration divergence.
+       NOTE: must be <rosparam> (YAML list -> double[]), NOT <param value="...">:
+       a space-separated value becomes a string, nh.param<vector<double>> then
+       returns an empty vector and Eigen::Map segfaults in the ParamServer ctor. -->
+  <rosparam param="lio_sam/extrinsicRot">[1, 0, 0, 0, 1, 0, 0, 0, 1]</rosparam>
+  <rosparam param="lio_sam/extrinsicRPY">[1, 0, 0, 0, 1, 0, 0, 0, 1]</rosparam>
+  <rosparam param="lio_sam/extrinsicTrans">[-0.20, 0.0, -0.13]</rosparam>
+
+  <!-- Retain enough UGV surface features in this indoor world to avoid
+       scan-to-map degeneracy; override both stages of the 0.4 m defaults. -->
+  <param name="lio_sam/odometrySurfLeafSize" value="0.2"/>
+  <param name="lio_sam/mappingSurfLeafSize" value="0.2"/>
+
+  <!-- UAV LIO-SAM has a private parameter/topic namespace and unique TF frames. -->
+  <include file="$(find uav_bringup)/launch/lio_sam_mapping.launch">
+    <arg name="rviz" value="false"/>
+    <arg name="publish_sensor_tf" value="false"/>
+    <arg name="publish_imu_tf" value="true"/>
+    <arg name="lio_namespace" value="uav"/>
+    <arg name="base_frame" value="uav/base_link"/>
+    <arg name="lidar_frame" value="uav/laser_3d"/>
+    <arg name="imu_frame" value="uav/imu_link_stereo"/>
+    <arg name="odom_frame" value="uav_lio_odom"/>
+    <arg name="map_frame" value="uav_lio_map"/>
+  </include>
+
+  <!-- Single waypoint: take off, then continuously hold position until shutdown. -->
+  <group ns="iris_0">
+    <node pkg="uav_bringup" type="offboard_mapping_mission.py"
+          name="offboard_takeoff_hover" output="screen" required="false">
+      <rosparam file="/home/yang/wzw/multi_robot_ws/src/start_up/config/takeoff_hover.yaml" command="load"/>
+      <rosparam param="waypoints" subst_value="true">[[0.0, 0.0, $(arg takeoff_height), 0.0]]</rosparam>
+      <param name="loops" value="1"/>
+      <param name="land_on_finish" value="false"/>
+      <param name="lio_odometry_topic" value="/uav/lio_sam/mapping/odometry"/>
+    </node>
+  </group>
+
+    <!-- Bridge UGV nav-stack frames: learning_navigation costmaps expect
+         map->odom_combined->base_footprint, while LIO-SAM publishes map->odom
+         and the Gazebo diff drive publishes odom->base_footprint. -->
+    <node pkg="tf" type="static_transform_publisher" name="map_to_odom_combined"
+      args="0 0 0 0 0 0 map odom_combined 100"/>
+
+    <!-- Align the independent LIO-SAM map roots for a shared RViz view only. -->
+    <node pkg="tf" type="static_transform_publisher" name="viz_world_to_ugv_map"
+      args="$(arg ugv_x) $(arg ugv_y) 0 0 0 0 viz_world map 100"/>
+    <node pkg="tf" type="static_transform_publisher" name="viz_world_to_uav_map"
+      args="$(arg uav_x) $(arg uav_y) $(arg uav_z) 0 0 0 viz_world uav_lio_map 100"/>
+
+    <node pkg="rviz" type="rviz" name="multi_robot_lio_rviz"
+      args="-d /home/yang/wzw/multi_robot_ws/src/start_up/rviz/multi_robot_lio.rviz" output="screen"/>
+</launch>

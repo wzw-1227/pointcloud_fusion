@@ -1,0 +1,87 @@
+# Partial-overlap EHPR matching; truth is for scoring only.
+upstream_commit: b4b7137f7e675974e025fc3c8e0ab891d353739a
+bev_resolution: 0.5
+image_size: 210
+height_resolution: 1.0
+max_density: 135.0
+local_density: 3
+buckets: 16
+hamming_distance: 60
+distribution_mean: 115.0
+distribution_std: 20.0
+database_capacity: 200
+allow_partial: true
+min_inliers: 5
+min_points: 20
+voxel_size: 0.5
+matching_radius_ugv: 8.0
+matching_radius_ugv_fallback: 12.0
+# Recent synchronized scans drive matching; full submaps remain the fusion input.
+use_recent_matching_cloud: true
+recent_window_seconds: 5.0
+recent_voxel_size: 0.2
+recent_min_frames: 20
+recent_max_frames: 100
+ugv_registered_cloud_topic: /algorithm_test/ugv/cloud_registered
+uav_registered_cloud_topic: /algorithm_test/uav/cloud_registered
+ugv_registered_odometry_topic: /algorithm_test/ugv/odometry
+uav_registered_odometry_topic: /algorithm_test/uav/odometry
+matching_radius_uav: 0.0
+max_candidates: 10
+min_structural_overlap: 0.0
+structural_height_above_floor: 0.4
+min_structural_points: 20
+max_iterations: 10
+correspondence_distance: 1.0
+max_fitness: 2.5
+overlap_radius: 0.5
+min_overlap: 0.3
+max_residual_rmse: 0.3
+ugv_frame: algorithm_ugv_odom
+uav_frame: algorithm_uav_odom
+ugv_topic: /stage2/ugv/submap
+uav_topic: /stage2/uav/submap
+worker_queue_size: 64
+fusion_voxel_size: 0.15
+matching_profile: partial_contour
+
+# Independent validation of all structural points, with unequal observation coverage.
+partial_high_coverage: 0.70
+partial_low_coverage: 0.25
+partial_min_pairs: 80
+partial_rmse: 0.20
+partial_span: 2.0
+partial_direction_angle_deg: 30.0
+partial_direction_min_pairs: 20
+partial_information_ratio: 0.0001
+partial_score_margin: 0.05
+partial_cluster_translation: 0.25
+partial_cluster_rotation_deg: 3.0
+partial_iterations: 20
+partial_planar_inlier_distance: 1.5
+# Old accumulated clouds lack a reliable ray origin; retain a conservative gate.
+partial_history_low_coverage: 0.60
+
+# Current flat-ground simulation: historical ground + high-altitude contour.
+contour_min_height: 2.5
+contour_grid: 0.2
+contour_distance: 0.30
+contour_high_coverage: 0.70
+contour_low_coverage: 0.25
+contour_rmse: 0.20
+contour_min_pairs: 60
+history_geometry_capacity: 200
+history_translation: 1.0
+history_rotation_deg: 10.0
+history_novelty: 0.10
+
+# Trust requires independent observations; geometry alone never publishes fusion.
+alignment_initial_observations: 2
+alignment_recovery_observations: 3
+alignment_baseline_m: 0.5
+alignment_structure_novelty: 0.10
+visibility_angle_deg: 0.5
+visibility_depth_m: 0.75
+visibility_max_conflict: 0.05
+visibility_min_rays: 50
+visibility_min_structure_rays: 20

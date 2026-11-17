@@ -1,0 +1,83 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: []
+      Splitter Ratio: 0.5
+    Tree Height: 500
+  - Class: rviz/Selection
+    Name: Selection
+  - Class: rviz/Views
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz/Grid
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 20
+      Cell Size: 1
+      Reference Frame: viz_world
+      Value: true
+    - Class: rviz/PointCloud2
+      Enabled: true
+      Name: UGV LIO-SAM Map
+      Topic: /lio_sam/mapping/map_global
+      Queue Size: 5
+      Size (Pixels): 2
+      Size (m): 0.05
+      Color Transformer: AxisColor
+      Axis: Z
+      Value: true
+    - Class: rviz/Path
+      Enabled: true
+      Name: UGV LIO-SAM Path
+      Topic: /lio_sam/mapping/path
+      Buffer Length: 1
+      Value: true
+    - Class: rviz/PointCloud2
+      Enabled: true
+      Name: UAV LIO-SAM Map
+      Topic: /uav/lio_sam/mapping/map_global
+      Queue Size: 5
+      Size (Pixels): 2
+      Size (m): 0.05
+      Color Transformer: AxisColor
+      Axis: Z
+      Value: true
+    - Class: rviz/Path
+      Enabled: true
+      Name: UAV LIO-SAM Path
+      Topic: /uav/lio_sam/mapping/path
+      Buffer Length: 1
+      Value: true
+  Enabled: true
+  Global Options:
+    Fixed Frame: viz_world
+    Background Color: 35; 38; 42
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+    - Class: rviz/SetInitialPose
+    - Class: rviz/SetGoal
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 18
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Name: Current View
+      Pitch: 0.7
+      Yaw: 0.7
+Window Geometry:
+  Height: 900
+  Width: 1500

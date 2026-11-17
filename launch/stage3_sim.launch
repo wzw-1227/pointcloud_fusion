@@ -1,0 +1,49 @@
+<launch>
+  <arg name="sim_profile" default="stable"/>
+  <arg name="uav_sensor_profile" default="$(arg sim_profile)"/>
+  <param name="/stage1/sim_profile" value="$(eval {'stable':'stable','legacy':'legacy'}[arg('sim_profile')])"/>
+  <arg name="ugv_x" default="-7.0"/>
+  <arg name="ugv_y" default="-8.5"/>
+  <arg name="uav_x" default="1.0"/>
+  <arg name="uav_y" default="0.0"/>
+  <arg name="uav_z" default="0.3"/>
+  <arg name="gui" default="true"/>
+  <arg name="rviz" default="true"/>
+  <arg name="manual_control" default="true"/>
+  <arg name="world" default="$(eval find('start_up') + '/worlds/stage1_stable.world' if arg('sim_profile') == 'stable' else find('mavlink_sitl_gazebo') + '/worlds/ego_swarm_edit.world')"/>
+  <arg name="ugv_config" default="$(find start_up)/config/stage1_ugv_sim.yaml"/>
+  <arg name="uav_config" default="$(eval find('start_up') + '/config/stage1_uav_stable.yaml' if arg('uav_sensor_profile') in ['stable','wide'] else find('start_up') + '/config/stage1_uav_sim.yaml')"/>
+  <arg name="record" default="true"/>
+  <arg name="record_output_root" default="$(find start_up)/../../results/stability"/>
+  <arg name="config" default="$(find ehpr_bridge)/config/stage3.yaml"/>
+  <arg name="output_root" default="$(find start_up)/../../results/stage3"/>
+  <arg name="submap_output_root" default="$(find start_up)/../../results/stage2"/>
+  <arg name="submap_config" default="$(find ehpr_bridge)/config/stage3_live_submaps.yaml"/>
+  <node if="$(arg record)" pkg="start_up" type="stage3_record.py" name="stage3_record" output="screen" required="true">
+    <param name="output_root" value="$(arg record_output_root)"/>
+  </node>
+  <include file="$(find start_up)/launch/stage2_sim.launch">
+    <arg name="robot" value="both"/>
+    <arg name="ugv_x" value="$(arg ugv_x)"/>
+    <arg name="ugv_y" value="$(arg ugv_y)"/>
+    <arg name="uav_x" value="$(arg uav_x)"/>
+    <arg name="uav_y" value="$(arg uav_y)"/>
+    <arg name="uav_z" value="$(arg uav_z)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="rviz" value="false"/>
+    <arg name="manual_control" value="$(arg manual_control)"/>
+    <arg name="ugv_config" value="$(arg ugv_config)"/>
+    <arg name="uav_config" value="$(arg uav_config)"/>
+    <arg name="uav_sensor_profile" value="$(arg uav_sensor_profile)"/>
+    <arg name="sim_profile" value="$(arg sim_profile)"/>
+    <arg name="world" value="$(arg world)"/>
+    <arg name="output_root" value="$(arg submap_output_root)"/>
+    <arg name="config" value="$(arg submap_config)"/>
+  </include>
+  <include file="$(find ehpr_bridge)/launch/stage3_matching.launch">
+    <arg name="require_lio_quality" value="true"/>
+    <arg name="config" value="$(arg config)"/>
+    <arg name="output_root" value="$(arg output_root)"/>
+  </include>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="stage3_rviz" args="-d $(find start_up)/rviz/stage3_online.rviz"/>
+</launch>
